@@ -1,46 +1,46 @@
 /*
- * ATtiny2313Ћg—p DRSSTCђ§Њд—p 6a‰№MIDIѓfѓRЃ[ѓ_ ver2.1
+ * ATtiny2313дЅїз”Ё DRSSTCе€¶еѕЎз”Ё 6е’ЊйџіMIDIгѓ‡г‚ігѓјгѓЂ ver2.1
  *
- * ђ»ЌмЉJЋn: 2013/05/03
- * ЌЕЏIЌXђV: 2013/07/07
- * ђ»ЌмЋТ : kingyo
+ * иЈЅдЅњй–‹е§‹: 2013/05/03
+ * жњЂзµ‚ж›ґж–°: 2013/07/07
+ * иЈЅдЅњиЂ… : kingyo
  *
- * ѓNѓЌѓbѓN: 20MHz
- * ”­‰№‰В”\ѓmЃ[ѓg”ФЌ†: 0-108
+ * г‚Їгѓ­гѓѓг‚Ї: 20MHz
+ * з™єйџіеЏЇиѓЅгѓЋгѓјгѓ€з•ЄеЏ·: 0-108
  *
- * MIDIѓЃѓbѓZЃ[ѓW(ЋQЌl)
+ * MIDIгѓЎгѓѓг‚»гѓјг‚ё(еЏ‚иЂѓ)
  * MIDI_NoteOff			(0x8x)
  * MIDI_NoteOn				(0x9x)
- * MIDI_ControlChange		(0xBx)	// –ўЋg—p
- * MIDI_ProgramChange		(0xCx)	// –ўЋg—p
- * MIDI_ChannelPressure	(0xDx)	// –ўЋg—p
- * MIDI_PitchBend			(0xEx)	// –ўЋg—p
+ * MIDI_ControlChange		(0xBx)	// жњЄдЅїз”Ё
+ * MIDI_ProgramChange		(0xCx)	// жњЄдЅїз”Ё
+ * MIDI_ChannelPressure	(0xDx)	// жњЄдЅїз”Ё
+ * MIDI_PitchBend			(0xEx)	// жњЄдЅїз”Ё
  */ 
 
 #include <avr/io.h>
-#include <avr/interrupt.h>	// Љ„‚иЌћ‚Э
-#include <avr/pgmspace.h>	// ’иђ”‚рѓtѓ‰ѓbѓVѓ…‚Й”z’u‚·‚й€Ч‚Й•K—v
-#include <avr/eeprom.h>		// EEPROMЋg—p‚М‚Ѕ‚Я
+#include <avr/interrupt.h>	// е‰Іг‚ЉиѕјгЃї
+#include <avr/pgmspace.h>	// е®љж•°г‚’гѓ•гѓ©гѓѓг‚·гѓҐгЃ«й…ЌзЅ®гЃ™г‚‹з‚єгЃ«еї…и¦Ѓ
+#include <avr/eeprom.h>		// EEPROMдЅїз”ЁгЃ®гЃџг‚Ѓ
 
-// ’и‹`’l
-#define BUFSIZE	16			// ѓoѓbѓtѓ@ѓTѓCѓY 2^nѓoѓCѓg
-#define WAON		6			// a‰№ђ”(•ПЌX‚µ‚И‚ў‚ЕЃI)
+// е®љзѕ©еЂ¤
+#define BUFSIZE	16			// гѓђгѓѓгѓ•г‚Ўг‚µг‚¤г‚є 2^nгѓђг‚¤гѓ€
+#define WAON		6			// е’Њйџіж•°(е¤‰ж›ґгЃ—гЃЄгЃ„гЃ§пјЃ)
 
-// ѓOѓЌЃ[ѓoѓ‹•Пђ”
-uint8_t out = 0x07;			// outЏ‰Љъ’l
-uint8_t s_playing[WAON+1];	// 6a‰№ + ‰№Њ№•s‘«Њџ’m—p
-uint8_t out_port[6];			// Џo—Нѓsѓ“Ћw’и—p
+// г‚°гѓ­гѓјгѓђгѓ«е¤‰ж•°
+uint8_t out = 0x07;			// outе€ќжњџеЂ¤
+uint8_t s_playing[WAON+1];	// 6е’Њйџі + йџіжєђдёЌи¶іж¤њзџҐз”Ё
+uint8_t out_port[6];			// е‡єеЉ›гѓ”гѓіжЊ‡е®љз”Ё
 uint8_t out_flg[3] = {0, 0, 0};
-uint8_t s_l, s_h;				// ѓmЃ[ѓg”ФЌ†‚ЕђU‚и•Є‚Ї‚йЌЫ‚Ми‡’l
-uint16_t t_l[WAON];			// ‰№’ц‚Й‘О‰ћ‚µ‚Ѕѓpѓ‹ѓX•ќ‚рЉi”[
-uint16_t c,  num[WAON];		// ѓ^ѓCѓ}Љ„‚иЌћ‚Э“а‚ЕЋg—p
+uint8_t s_l, s_h;				// гѓЋгѓјгѓ€з•ЄеЏ·гЃ§жЊЇг‚Ље€†гЃ‘г‚‹йљ›гЃ®й–ѕеЂ¤
+uint16_t t_l[WAON];			// йџізЁ‹гЃ«еЇѕеїњгЃ—гЃџгѓ‘гѓ«г‚№е№…г‚’ж јзґЌ
+uint16_t c,  num[WAON];		// г‚їг‚¤гѓће‰Іг‚ЉиѕјгЃїе†…гЃ§дЅїз”Ё
 PROGMEM const uint16_t table[] = {12740, 12025, 11350, 10713, 10111, 9544, 9008, 8503, 8025, 7575, 7150, 6748, 6369, 6012, 5674, 5356, 5055, 4771, 4504, 4251, 4012, 3787, 3574, 3374, 3184, 3005, 2837, 2677, 2527, 2385, 2251, 2125, 2006, 1893, 1787, 1686, 1592, 1502, 1418, 1338, 1263, 1192, 1125, 1062, 1002, 946, 893, 843, 795, 751, 708, 669, 631, 596, 562, 530, 501, 472, 446, 421, 397, 375, 354, 334, 315, 297, 281, 265, 250, 236, 222, 210, 198, 187, 176, 166, 157, 148, 140, 132, 124, 117, 111, 104, 99, 93, 88, 83, 78, 74, 69, 65, 62, 58, 55, 52, 49, 46, 43, 41, 39, 36, 34, 32, 30, 29, 27, 25, 24};
 
-// ѓЉѓ“ѓOѓoѓbѓtѓ@—p•Пђ”
-uint8_t RxBuf[BUFSIZE];		// ѓoѓbѓtѓ@
-uint8_t Pdata;					// ѓ|ѓCѓ“ѓ^
+// гѓЄгѓіг‚°гѓђгѓѓгѓ•г‚Ўз”Ёе¤‰ж•°
+uint8_t RxBuf[BUFSIZE];		// гѓђгѓѓгѓ•г‚Ў
+uint8_t Pdata;					// гѓќг‚¤гѓіг‚ї
 
-// delayЉЦђ”(ѓAѓoѓEѓg)
+// delayй–ўж•°(г‚ўгѓђг‚¦гѓ€)
 void delay_ms(uint16_t time){
 	volatile uint16_t lp1,lp2;
 	
@@ -49,16 +49,16 @@ void delay_ms(uint16_t time){
 	}
 }
 
-// ‹йЊ`”gЌДђ¶ЉЦђ”(ѓmЃ[ѓg”ФЌ†, Џo—Нѓsѓ“(0-2))
+// зџ©еЅўжіўе†Ќз”џй–ўж•°(гѓЋгѓјгѓ€з•ЄеЏ·, е‡єеЉ›гѓ”гѓі(0-2))
 void sound_play(uint8_t note, uint8_t pin)
 {
 	uint8_t i;
 	
-	if(note >= 0 && note <= 108){					// ”­‰№‰В”\”Н€Н‚М‚Э(0-108)
-		for(i=0; i<6; i++){						// ‰№Њ№1‚©‚зЏ‡‚Й”­‰№’†‚©Љm”F‚µ‚Д”­‰№‚µ‚Д‚ў‚И‚ў‚И‚з‚»‚к‚рЋg—p‚·‚й
-			if(s_playing[i] == 0x80){				// ”­‰№‚µ‚Д‚ў‚И‚ў‚©ЃH
-				t_l[i] = pgm_read_word(&table[note]);	// ‰№’ц‚Й‘О‰ћ‚µ‚Ѕѓpѓ‹ѓX•ќ‚рЉi”[
-				num[i] = c + t_l[i];				// Џ‰Љъ’lЊvЋZ
+	if(note >= 0 && note <= 108){					// з™єйџіеЏЇиѓЅзЇ„е›ІгЃ®гЃї(0-108)
+		for(i=0; i<6; i++){						// йџіжєђ1гЃ‹г‚‰й †гЃ«з™єйџідё­гЃ‹зўєиЄЌгЃ—гЃ¦з™єйџігЃ—гЃ¦гЃ„гЃЄгЃ„гЃЄг‚‰гЃќг‚Њг‚’дЅїз”ЁгЃ™г‚‹
+			if(s_playing[i] == 0x80){				// з™єйџігЃ—гЃ¦гЃ„гЃЄгЃ„гЃ‹пјџ
+				t_l[i] = pgm_read_word(&table[note]);	// йџізЁ‹гЃ«еЇѕеїњгЃ—гЃџгѓ‘гѓ«г‚№е№…г‚’ж јзґЌ
+				num[i] = c + t_l[i];				// е€ќжњџеЂ¤иЁ€з®—
 				s_playing[i] = note;
 				switch(pin){
 					case 0: out_port[i] = 0b11111110; out_flg[0]++; break;
@@ -66,14 +66,14 @@ void sound_play(uint8_t note, uint8_t pin)
 					case 2: out_port[i] = 0b11111011; out_flg[2]++; break;
 					default: out_port[i] = 0xff; break;
 				}
-				return;							// ЉЦђ”‚©‚з”І‚Ї‚й
+				return;							// й–ўж•°гЃ‹г‚‰жЉњгЃ‘г‚‹
 			}
 		}
-		s_playing[WAON]++;						// 6ЊВ‚М‰№Њ№‚р‚·‚Ч‚ДЋg‚ў‚«‚Б‚ЅЃi‰№Њ№•s‘«ѓJѓEѓ“ѓ^‚рѓCѓ“ѓNѓЉѓЃѓ“ѓgЃj
+		s_playing[WAON]++;						// 6еЂ‹гЃ®йџіжєђг‚’гЃ™гЃ№гЃ¦дЅїгЃ„гЃЌгЃЈгЃџпј€йџіжєђдёЌи¶іг‚«г‚¦гѓіг‚їг‚’г‚¤гѓіг‚ЇгѓЄгѓЎгѓігѓ€пј‰
 	}		
 }
 
-// ‹йЊ`”g’вЋ~ЉЦђ”(ѓmЃ[ѓg”ФЌ†, Џo—Нѓsѓ“(0-2))
+// зџ©еЅўжіўеЃњж­ўй–ўж•°(гѓЋгѓјгѓ€з•ЄеЏ·, е‡єеЉ›гѓ”гѓі(0-2))
 void sound_stop(uint8_t note, uint8_t pin)
 {
 	uint8_t prt, i;
@@ -85,73 +85,73 @@ void sound_stop(uint8_t note, uint8_t pin)
 		default: prt = 0xff; break;
 	}
 	
-	for(i=0; i<6; i++){							// ‰№Њ№1‚©‚зЏ‡‚ЙѓmЃ[ѓgѓIѓt‚Й“–‚Ѕ‚й‰№Њ№‚р’T‚µЃAЊ©‚В‚©‚к‚О”­‰№’вЋ~
-		if(s_playing[i] == note && out_port[i] == prt){		// ’T‚µ‚Д‚ў‚йѓmЃ[ѓg”ФЌ†‚Е‚©‚Вѓ|Ѓ[ѓg‚а“Ї‚¶‚©ЃH
-			s_playing[i] = 0x80;					// –і‰№‚ЙђЭ’и(0x80‚Н–і‰№)
+	for(i=0; i<6; i++){							// йџіжєђ1гЃ‹г‚‰й †гЃ«гѓЋгѓјгѓ€г‚Єгѓ•гЃ«еЅ“гЃџг‚‹йџіжєђг‚’жЋўгЃ—гЂЃи¦‹гЃ¤гЃ‹г‚ЊгЃ°з™єйџіеЃњж­ў
+		if(s_playing[i] == note && out_port[i] == prt){		// жЋўгЃ—гЃ¦гЃ„г‚‹гѓЋгѓјгѓ€з•ЄеЏ·гЃ§гЃ‹гЃ¤гѓќгѓјгѓ€г‚‚еђЊгЃгЃ‹пјџ
+			s_playing[i] = 0x80;					// з„ЎйџігЃ«иЁ­е®љ(0x80гЃЇз„Ўйџі)
 			switch(pin){
 				case 0: out_flg[0]--; break;
 				case 1: out_flg[1]--; break;
 				case 2: out_flg[2]--; break;
 				default: break;
 			}
-			return;								// ЉЦђ”‚©‚з”І‚Ї‚й
+			return;								// й–ўж•°гЃ‹г‚‰жЉњгЃ‘г‚‹
 		}
 	}
-	s_playing[WAON]=0;							// ‰№Њ№•s‘«ѓJѓEѓ“ѓ^‚рѓfѓNѓЉѓЃѓ“ѓg
+	s_playing[WAON]=0;							// йџіжєђдёЌи¶іг‚«г‚¦гѓіг‚їг‚’гѓ‡г‚ЇгѓЄгѓЎгѓігѓ€
 }
 
-// UARTЋуђMЉ„‚иЌћ‚Э
+// UARTеЏ—дїЎе‰Іг‚ЉиѕјгЃї
 ISR(USART_RX_vect)
 {
-	// ѓЉѓ“ѓOѓoѓbѓtѓ@‚Й•Ы‘¶
+	// гѓЄгѓіг‚°гѓђгѓѓгѓ•г‚ЎгЃ«дїќе­
 	Pdata++;
 	Pdata &= (BUFSIZE - 1);
 	RxBuf[Pdata] = UDR;
 }
 
-// ѓ^ѓCѓ}0”дЉr€к’vAЉ„‚иЌћ‚Э(9.6us‚І‚Ж‚ЙЊД‚О‚к‚й)
+// г‚їг‚¤гѓћ0жЇ”ијѓдёЂи‡ґAе‰Іг‚ЉиѕјгЃї(9.6usгЃ”гЃЁгЃ«е‘јгЃ°г‚Њг‚‹)
 ISR(TIMER0_COMPA_vect)
 {
-	PORTB = out;						// Џo—Нѓ|Ѓ[ѓgЏу‘ФЌXђV
-	c++;								// 16bit•Пђ”ѓJѓEѓ“ѓgѓAѓbѓv
-	out = 0xff;						// Hi‚Й–Я‚·
+	PORTB = out;						// е‡єеЉ›гѓќгѓјгѓ€зЉ¶ж…‹ж›ґж–°
+	c++;								// 16bitе¤‰ж•°г‚«г‚¦гѓігѓ€г‚ўгѓѓгѓ—
+	out = 0xff;						// HiгЃ«ж€»гЃ™
 	
-	if(s_playing[0] != 0x80){			// ‰№Њ№1
+	if(s_playing[0] != 0x80){			// йџіжєђ1
 		if(c == num[0]){
 			num[0] += t_l[0];
-			out &= out_port[0];		// ‘О‰ћѓ|Ѓ[ѓg‚рLo‚Й‚·‚й
+			out &= out_port[0];		// еЇѕеїњгѓќгѓјгѓ€г‚’LoгЃ«гЃ™г‚‹
 		}
 	}
 
-	if(s_playing[1] != 0x80){			// ‰№Њ№2
+	if(s_playing[1] != 0x80){			// йџіжєђ2
 		if(c == num[1]){
 			num[1] += t_l[1];
 			out &= out_port[1];
 		}
 	}
 	
-	if(s_playing[2] != 0x80){			// ‰№Њ№3
+	if(s_playing[2] != 0x80){			// йџіжєђ3
 		if(c == num[2]){
 			num[2] += t_l[2];
 			out &= out_port[2];
 		}
 	}
 	
-	if(s_playing[3] != 0x80){			// ‰№Њ№4
+	if(s_playing[3] != 0x80){			// йџіжєђ4
 		if(c == num[3]){
 			num[3] += t_l[3];
 			out &= out_port[3];
 		}
 	}
 	
-	if(s_playing[4] != 0x80){			// ‰№Њ№5
+	if(s_playing[4] != 0x80){			// йџіжєђ5
 		if(c == num[4]){
 			num[4] += t_l[4];
 			out &= out_port[4];
 		}
 	}
 	
-	if(s_playing[5] != 0x80){			// ‰№Њ№6
+	if(s_playing[5] != 0x80){			// йџіжєђ6
 		if(c == num[5]){
 			num[5] += t_l[5];
 			out &= out_port[5];
@@ -159,106 +159,106 @@ ISR(TIMER0_COMPA_vect)
 	}
 }
 
-// USARTђЭ’и
+// USARTиЁ­е®љ
 void Usart_init(void)
 {
 	UBRRH = 0x00;
 	UBRRL = 0x27;
 	
-	UCSRB = 0b10010000;		// ЋуђMЉ„‚иЌћ‚Э‹–‰В/ЋуђM‹–‰В
-	UCSRC = 0b00000110;		// ”с“ЇЉъ“®Ќм/ѓpѓЉѓeѓB–і‚µ/ѓXѓgѓbѓv1bit/ѓfЃ[ѓ^8bit
+	UCSRB = 0b10010000;		// еЏ—дїЎе‰Іг‚ЉиѕјгЃїиЁ±еЏЇ/еЏ—дїЎиЁ±еЏЇ
+	UCSRC = 0b00000110;		// йќћеђЊжњџе‹•дЅњ/гѓ‘гѓЄгѓ†г‚Јз„ЎгЃ—/г‚№гѓ€гѓѓгѓ—1bit/гѓ‡гѓјг‚ї8bit
 }
 
 void main(void)
 {
 	uint8_t status, byte_1, byte_cnt, RxByte, Pout, mode, i, mode4_cnt = 0;
 	
-	// IOѓ|Ѓ[ѓgђЭ’и
-	DDRA = 0x00;				// ѓ|Ѓ[ѓgA‚Н“ь—Н
-	DDRB = 0xff;				// ѓ|Ѓ[ѓgB‚НЏo—Н
-	DDRD = 0b01011100;		// ѓ|Ѓ[ѓgD‚М2,3,4,6‚ѕ‚ЇЏo—Н
-	PORTA = PORTD = 0;			// ѓ|Ѓ[ѓgЏу‘ФЏ‰Љъ‰»
+	// IOгѓќгѓјгѓ€иЁ­е®љ
+	DDRA = 0x00;				// гѓќгѓјгѓ€AгЃЇе…ҐеЉ›
+	DDRB = 0xff;				// гѓќгѓјгѓ€BгЃЇе‡єеЉ›
+	DDRD = 0b01011100;		// гѓќгѓјгѓ€DгЃ®2,3,4,6гЃ гЃ‘е‡єеЉ›
+	PORTA = PORTD = 0;			// гѓќгѓјгѓ€зЉ¶ж…‹е€ќжњџеЊ–
 	PORTB = 0b00000111;
 	
-	for(i=0; i < WAON; i++){	// ”z—сЏ‰Љъ‰»
+	for(i=0; i < WAON; i++){	// й…Ќе€—е€ќжњџеЊ–
 		s_playing[i] = 0x80;
 	}
-	s_playing[WAON] = 0x00;		// ‰№Њ№•s‘«ѓJѓEѓ“ѓg—p
+	s_playing[WAON] = 0x00;		// йџіжєђдёЌи¶іг‚«г‚¦гѓігѓ€з”Ё
 	
-	// ѓ‚Ѓ[ѓh”»•К
+	// гѓўгѓјгѓ‰е€¤е€Ґ
 	switch(PIND & 0x22){
-		case 0x00: mode = 1; break;	// ѓ`ѓѓѓ“ѓlѓ‹‹ж•КЌДђ¶
-		case 0x02: mode = 3; break;	// ђЭ’иѓmЃ[ѓg”ФЌ†‚Е•К‚к‚й
-		case 0x20: mode = 2; break;	// ѓ`ѓѓѓ“ѓlѓ‹‚р‹ж•К‚№‚ё‚ЙЌДђ¶
-		case 0x22: mode = 4; PORTD = PIND | 0b01000000;	break;	// ‹@”\ђЭ’иѓ‚Ѓ[ѓh(LED4‚р“_“”‚і‚№‚й)
+		case 0x00: mode = 1; break;	// гѓЃгѓЈгѓігѓЌгѓ«еЊєе€Ґе†Ќз”џ
+		case 0x02: mode = 3; break;	// иЁ­е®љгѓЋгѓјгѓ€з•ЄеЏ·гЃ§е€Ґг‚Њг‚‹
+		case 0x20: mode = 2; break;	// гѓЃгѓЈгѓігѓЌгѓ«г‚’еЊєе€ҐгЃ›гЃљгЃ«е†Ќз”џ
+		case 0x22: mode = 4; PORTD = PIND | 0b01000000;	break;	// ж©џиѓЅиЁ­е®љгѓўгѓјгѓ‰(LED4г‚’з‚№зЃЇгЃ•гЃ›г‚‹)
 		default: mode = 0; break;
 	}
 	
-	// EEPROM‚©‚зђЭ’и’l“З‚ЭЏo‚µ
+	// EEPROMгЃ‹г‚‰иЁ­е®љеЂ¤иЄ­гЃїе‡єгЃ—
 	s_l = eeprom_read_byte(0);
 	s_h = eeprom_read_byte(1);
 	
-	// ѓ^ѓCѓ}0ђЭ’и
-	TCCR0A = 0b00000010;		// CTC“®Ќм
+	// г‚їг‚¤гѓћ0иЁ­е®љ
+	TCCR0A = 0b00000010;		// CTCе‹•дЅњ
 	TCCR0B = 0b00000011;		// Clk/64
-	OCR0A = 2;					// ѓJѓEѓ“ѓ^ѓgѓbѓv’l(Љ„‚иЌћ‚ЭЋьЉъ 9.6us) [OCR0A = (9.6us/3.2us)-1 = 2]
-	TIMSK = 0b00000001;		// ”дЉrAЉ„‚иЌћ‚Э‹–‰В
+	OCR0A = 2;					// г‚«г‚¦гѓіг‚їгѓ€гѓѓгѓ—еЂ¤(е‰Іг‚ЉиѕјгЃїе‘Ёжњџ 9.6us) [OCR0A = (9.6us/3.2us)-1 = 2]
+	TIMSK = 0b00000001;		// жЇ”ијѓAе‰Іг‚ЉиѕјгЃїиЁ±еЏЇ
 	
-	Pdata = Pout = 0;			// ѓoѓbѓtѓ@Џ‰Љъ‰»
-	Usart_init();				// UsartЏ‰Љъ‰»
-	sei();						// ‘SЉ„‚иЌћ‚Э‹–‰В
+	Pdata = Pout = 0;			// гѓђгѓѓгѓ•г‚Ўе€ќжњџеЊ–
+	Usart_init();				// Usartе€ќжњџеЊ–
+	sei();						// е…Ёе‰Іг‚ЉиѕјгЃїиЁ±еЏЇ
 	
-	///////////// ѓЃѓCѓ“ѓ‹Ѓ[ѓv //////////////
+	///////////// гѓЎг‚¤гѓігѓ«гѓјгѓ— //////////////
 	while(1) {
-		// ‰№Њ№Ћg—pЉm”FLED“_“”Џ€—ќ
+		// йџіжєђдЅїз”ЁзўєиЄЌLEDз‚№зЃЇе‡¦зђ†
 		if(mode != 4){
 			if(s_playing[WAON] != 0){
-				PORTD = PIND | 0b01000000;	// ‰№Њ№•s‘«(LED4)
+				PORTD = PIND | 0b01000000;	// йџіжєђдёЌи¶і(LED4)
 			} else {
 				PORTD = PIND & 0b10111111;
 			}
 			if(out_flg[0] != 0){
-				PORTD = PIND | 0b00000100;	// ch1Џo—Н’†(LED1)
+				PORTD = PIND | 0b00000100;	// ch1е‡єеЉ›дё­(LED1)
 			} else {
 				PORTD = PIND & 0b11111011;
 			}		
 			if(out_flg[1] != 0){
-				PORTD = PIND | 0b00001000;	// ch2Џo—Н’†(LED2)
+				PORTD = PIND | 0b00001000;	// ch2е‡єеЉ›дё­(LED2)
 			} else {
 				PORTD = PIND & 0b11110111;
 			}
 			if(out_flg[2] != 0){
-				PORTD = PIND | 0b00010000;	// ch3Џo—Н’†(LED3)
+				PORTD = PIND | 0b00010000;	// ch3е‡єеЉ›дё­(LED3)
 			} else {
 				PORTD = PIND & 0b11101111;
 			}
 		}		
 		
 		if(Pdata == Pout){
-			continue;			// ѓoѓbѓtѓ@‚Є‹у‚М‚Ж‚«
+			continue;			// гѓђгѓѓгѓ•г‚ЎгЃЊз©єгЃ®гЃЁгЃЌ
 		}
 		
-		// ѓЉѓ“ѓOѓoѓbѓtѓ@‚©‚з1ѓoѓCѓgЋж‚иЏo‚µ
+		// гѓЄгѓіг‚°гѓђгѓѓгѓ•г‚ЎгЃ‹г‚‰1гѓђг‚¤гѓ€еЏ–г‚Ље‡єгЃ—
 		Pout++;
 		Pout &= (BUFSIZE - 1);
 		RxByte = RxBuf[Pout];
 		
-		// ѓfЃ[ѓ^‰рђН
-		if(RxByte & 0x80){		// ѓXѓeЃ[ѓ^ѓXѓoѓCѓg(MSB = 1)
+		// гѓ‡гѓјг‚їи§Јжћђ
+		if(RxByte & 0x80){		// г‚№гѓ†гѓјг‚їг‚№гѓђг‚¤гѓ€(MSB = 1)
 			status = RxByte;
 			byte_cnt = 1;
 			continue;
 		}
 		
-		if(byte_cnt == 1){		// ‘ж€кѓfЃ[ѓ^ѓoѓCѓg
+		if(byte_cnt == 1){		// з¬¬дёЂгѓ‡гѓјг‚їгѓђг‚¤гѓ€
 			byte_1 = RxByte;
 			byte_cnt = 2;
 			continue;
 		}
 		
-		if(byte_cnt == 2){					// ‘ж“сѓfЃ[ѓ^ѓoѓCѓg
-			if(status >> 4 == 0x09){		// ѓmЃ[ѓgѓIѓ“ѓCѓxѓ“ѓg
-				if(RxByte == 0){			// ѓxѓЌѓVѓeѓB‚Є0(ѓmЃ[ѓgѓIѓt)
+		if(byte_cnt == 2){					// з¬¬дєЊгѓ‡гѓјг‚їгѓђг‚¤гѓ€
+			if(status >> 4 == 0x09){		// гѓЋгѓјгѓ€г‚Єгѓіг‚¤гѓ™гѓігѓ€
+				if(RxByte == 0){			// гѓ™гѓ­г‚·гѓ†г‚ЈгЃЊ0(гѓЋгѓјгѓ€г‚Єгѓ•)
 					if(mode == 1){
 						if((status & 0x0f) <= 2){
 							sound_stop(byte_1, status & 0x0f);
@@ -292,32 +292,32 @@ void main(void)
 					} else if(mode == 4){
 						if(mode4_cnt == 0){
 							if(byte_1 == 69){
-								PORTD = PIND | 0b00000100;	// LED1“_“”
+								PORTD = PIND | 0b00000100;	// LED1з‚№зЃЇ
 								mode4_cnt = 1;
 							}
 						}else if(mode4_cnt == 1){
-							PORTD = PIND | 0b00001000;		// LED2“_“”
+							PORTD = PIND | 0b00001000;		// LED2з‚№зЃЇ
 							s_l = byte_1;
 							mode4_cnt = 2;
 						} else if(mode4_cnt == 2){
 							s_h = byte_1;
-							if(s_l < s_h){					// ђЭ’иЏрЊЏOK
-								eeprom_write_byte(0, s_l);	// EEPROM‚Й•Ы‘¶
+							if(s_l < s_h){					// иЁ­е®љжќЎд»¶OK
+								eeprom_write_byte(0, s_l);	// EEPROMгЃ«дїќе­
 								eeprom_write_byte(1, s_h);
 								while(1){
-									PORTD = PIND | 0b00010000;		// LED3“_“”
+									PORTD = PIND | 0b00010000;		// LED3з‚№зЃЇ
 									delay_ms(100);
-									PORTD = PIND & 0b11101111;		// LED3ЏБ“”
+									PORTD = PIND & 0b11101111;		// LED3ж¶€зЃЇ
 									delay_ms(100);
 								}								
-							} else {						// ђЭ’иЏрЊЏNG
-								PORTD = PIND & 0b11110111;			// LED2ЏБ“”
+							} else {						// иЁ­е®љжќЎд»¶NG
+								PORTD = PIND & 0b11110111;			// LED2ж¶€зЃЇ
 								mode4_cnt = 1;
 							}
 						}
 					}
 				}
-			}else if(status >> 4 == 0x08){				// ѓmЃ[ѓgѓIѓtѓCѓxѓ“ѓg
+			}else if(status >> 4 == 0x08){				// гѓЋгѓјгѓ€г‚Єгѓ•г‚¤гѓ™гѓігѓ€
 				if(mode == 1){
 					if((status & 0x0f) <= 2){
 						sound_stop(byte_1, status & 0x0f);
