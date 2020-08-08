@@ -1,8 +1,9 @@
 /*
- * ATtiny2313使用 DRSSTC制御用 6和音MIDIデコーダ ver2.1
+ * ATtiny2313使用 DRSSTC制御用 6和音MIDIデコーダ
+ * ピッチベンド対応Ver
  *
  * 製作開始: 2013/05/03
- * 最終更新: 2013/07/07
+ * 最終更新: 2020/08/08
  * 製作者 : kingyo
  *
  * クロック: 20MHz
@@ -17,90 +18,132 @@
  * MIDI_PitchBend           (0xEx)  // 未使用
  */ 
 
+/*
+         ATtiny2313
+             ___    ___
+RESET       [1  |__| 20] Vcc
+PD0(RxD)    [2       19] PB7(SCK)
+PD1(Mode)   [3       18] PB6(MISO)
+XTAL2       [4       17] PB5(MOSI)
+XTAL1       [5       16] PB4(NC)
+PD2(Out)    [6       15] PB3(ChMode)
+PD3(NC)     [7       14] PB2(ChMode)
+PD4(NC)     [8       13] PB1(ChMode)
+PD5(OutLED) [9       12] PB0(ChMode)
+GND         [10      11] PD6(ErrorLED)
+            ~~~~~~~~~~~~
+ */
+
 #include <avr/io.h>
 #include <avr/interrupt.h>  // 割り込み
 #include <avr/pgmspace.h>   // 定数をフラッシュに配置する為に必要
-#include <avr/eeprom.h>     // EEPROM使用のため
 
-// 定義値
-#define DEF_BUFSIZE (16)    // UART受信バッファサイズ 2^nバイト
-#define DEF_WAON    (6)     // 和音数(変更しないで！)
+/* 定義値 */
+#define DEF_BUFSIZE     (16)    // UART受信バッファサイズ 2^nバイト
+#define DEF_WAON_NUM    (6)     // 和音数(変更しないで！)
+// 矩形波出力ピン (PD2)
+#define DEF_SOUT_PORT   (PORTD) // 出力ポート
+#define DEF_SOUT_DDR    (DDRD)  // 出力方向選択
+#define DEF_SOUT_BIT    (2)     // 出力bit
+// 出力状態表示LED (PD5)
+#define DEF_SLED_PORT   (PORTD) // 出力ポート
+#define DEF_SLED_DDR    (DDRD)  // 出力方向選択
+#define DEF_SLED_BIT    (5)     // 出力bit
+// 音源不足状態表示LED (PD6)
+#define DEF_ELED_PORT   (PORTD) // 出力ポート
+#define DEF_ELED_DDR    (DDRD)  // 出力方向選択
+#define DEF_ELED_BIT    (6)     // 出力bit
 
 // グローバル変数
-uint8_t out = 0x07;         // out初期値
-uint8_t s_playing[DEF_WAON+1];  // 6和音 + 音源不足検知用
-uint8_t out_port[6];            // 出力ピン指定用
-uint8_t out_flg[3] = {0, 0, 0};
-uint8_t s_l, s_h;               // ノート番号で振り分ける際の閾値
-uint16_t t_l[DEF_WAON];         // 音程に対応したパルス幅を格納
-uint16_t c,  num[DEF_WAON];     // タイマ割り込み内で使用
-PROGMEM const uint16_t table[] = {12740, 12025, 11350, 10713, 10111, 9544, 9008, 8503, 8025, 7575, 7150, 6748, 6369, 6012, 5674, 5356, 5055, 4771, 4504, 4251, 4012, 3787, 3574, 3374, 3184, 3005, 2837, 2677, 2527, 2385, 2251, 2125, 2006, 1893, 1787, 1686, 1592, 1502, 1418, 1338, 1263, 1192, 1125, 1062, 1002, 946, 893, 843, 795, 751, 708, 669, 631, 596, 562, 530, 501, 472, 446, 421, 397, 375, 354, 334, 315, 297, 281, 265, 250, 236, 222, 210, 198, 187, 176, 166, 157, 148, 140, 132, 124, 117, 111, 104, 99, 93, 88, 83, 78, 74, 69, 65, 62, 58, 55, 52, 49, 46, 43, 41, 39, 36, 34, 32, 30, 29, 27, 25, 24};
+static uint8_t s_playing[DEF_WAON_NUM];     // 音源状態格納（ノート番号）
+static uint16_t t_l[DEF_WAON_NUM];          // 音程に対応したパルス幅を格納
+static uint16_t tim0Cnt, num[DEF_WAON_NUM]; // タイマ割り込み内で使用
+static uint8_t lackCnt = 0;                 // 不足音源数カウンタ
+static uint8_t pitchBendMSB, pitchBendSens; // ピッチベンドパラメータ
 
+PROGMEM const uint16_t table[] = {12741, 12718, 12695, 12672, 12649, 12626, 12604, 12581, 12558, 12536, 12513, 12490, 12468, 12445, 12423, 12401, 12378, 12356, 12334, 12311, 12289, 12267, 12245, 12223, 12201, 12179, 12157, 12135, 12113, 12091, 12069, 12047, 12026, 12004, 11982, 11961, 11939, 11918, 11896, 11875, 11853, 11832, 11811, 11789, 11768, 11747, 11726, 11705, 11683, 11662, 11641, 11620, 11599, 11578, 11558, 11537, 11516, 11495, 11474, 11454, 11433, 11412, 11392, 11371, 11351, 11330, 11310, 11290, 11269, 11249, 11229, 11208, 11188, 11168, 11148, 11128, 11108, 11088, 11068, 11048, 11028, 11008, 10988, 10968, 10948, 10929, 10909, 10889, 10870, 10850, 10830, 10811, 10791, 10772, 10752, 10733, 10714, 10694, 10675, 10656, 10637, 10617, 10598, 10579, 10560, 10541, 10522, 10503, 10484, 10465, 10446, 10428, 10409, 10390, 10371, 10353, 10334, 10315, 10297, 10278, 10260, 10241, 10223, 10204, 10186, 10167, 10149, 10131, 10112, 10094, 10076, 10058, 10040, 10022, 10003, 9985, 9967, 9949, 9932, 9914, 9896, 9878, 9860, 9842, 9825, 9807, 9789, 9771, 9754, 9736, 9719, 9701, 9684, 9666, 9649, 9631, 9614, 9597, 9579, 9562, 9545, 9528, 9510, 9493, 9476, 9459, 9442, 9425, 9408, 9391, 9374, 9357, 9340, 9323, 9307, 9290, 9273, 9256, 9240, 9223, 9206, 9190, 9173, 9157, 9140, 9124, 9107, 9091, 9074, 9058, 9042, 9025, 9009, 8993, 8977, 8960, 8944, 8928, 8912, 8896, 8880, 8864, 8848, 8832, 8816, 8800, 8784, 8768, 8753, 8737, 8721, 8705, 8690, 8674, 8658, 8643, 8627, 8612, 8596, 8581, 8565, 8550, 8534, 8519, 8504, 8488, 8473, 8458, 8442, 8427, 8412, 8397, 8382, 8366, 8351, 8336, 8321, 8306, 8291, 8276, 8261, 8247, 8232, 8217, 8202, 8187, 8172, 8158, 8143, 8128, 8114, 8099, 8084, 8070, 8055, 8041, 8026, 8012, 7997, 7983, 7968, 7954, 7940, 7925, 7911, 7897, 7883, 7868, 7854, 7840, 7826, 7812, 7798, 7784, 7770, 7756, 7742, 7728, 7714, 7700, 7686, 7672, 7658, 7644, 7631, 7617, 7603, 7589, 7576, 7562, 7548, 7535, 7521, 7508, 7494, 7481, 7467, 7454, 7440, 7427, 7413, 7400, 7387, 7373, 7360, 7347, 7334, 7320, 7307, 7294, 7281, 7268, 7255, 7241, 7228, 7215, 7202, 7189, 7176, 7163, 7151, 7138, 7125, 7112, 7099, 7086, 7074, 7061, 7048, 7035, 7023, 7010, 6997, 6985, 6972, 6960, 6947, 6934, 6922, 6909, 6897, 6885, 6872, 6860, 6847, 6835, 6823, 6810, 6798, 6786, 6774, 6761, 6749, 6737, 6725, 6713, 6701, 6689, 6677, 6664, 6652, 6640, 6628, 6617, 6605, 6593, 6581, 6569, 6557, 6545, 6533, 6522, 6510, 6498, 6486, 6475, 6463, 6451, 6440, 6428, 6417, 6405, 6393, 6382};
 // リングバッファ用変数
-uint8_t RxBuf[DEF_BUFSIZE];     // バッファ
-uint8_t Pdata;                  // ポインタ
+volatile static uint8_t RxBuf[DEF_BUFSIZE];     // バッファ
+volatile static uint8_t Pdata;                  // ポインタ
 
-// delay関数(アバウト)
-void delay_ms(uint16_t time){
-    volatile uint16_t lp1, lp2;
-    
-    for (lp2 = 0; lp2 < time; lp2++) {
-        for (lp1 = 0; lp1 < 1050; lp1++) {}
-    }
-}
-
-// 矩形波再生関数(ノート番号, 出力ピン(0-2))
-void sound_play(uint8_t note, uint8_t pin)
+/*****************************
+ * 矩形波再生関数
+ *  - note:ノート番号
+ *****************************/
+void playSound(uint8_t note)
 {
     uint8_t i;
+    uint8_t oct;
+    uint16_t index;
+    uint16_t intTone;
     
     if (note >= 0 && note <= 108) {             // 発音可能範囲のみ(0-108)
-        for (i = 0; i < 6; i++) {               // 音源1から順に発音中か確認して発音していないならそれを使用する
-            if (s_playing[i] == 0x80) {         // 発音していないか？
-                t_l[i] = pgm_read_word(&table[note]);   // 音程に対応したパルス幅を格納
-                num[i] = c + t_l[i];            // 初期値計算
+        for (i = 0; i < DEF_WAON_NUM; i++) {    // 音源1から順に発音中か確認して発音していないならそれを使用する
+            if (s_playing[i] == 0x80) {
+                // ノート番号を32倍して内部トーンに変換
+                intTone = note << 5;
+                // ピッチベンドの中央からの差分とピッチベンドセンシティビティを乗算してトーンに加算
+                intTone += ((pitchBendMSB - 64) * pitchBendSens) >> 1;
+                oct = intTone / 384;
+                index = intTone % 384;
+                cli();
+                t_l[i] = pgm_read_word(&table[index]) >> oct;
+                num[i] = tim0Cnt + t_l[i];            // 初期値計算
                 s_playing[i] = note;
-                switch (pin) {
-                    case 0: out_port[i] = 0b11111110; out_flg[0]++; break;
-                    case 1: out_port[i] = 0b11111101; out_flg[1]++; break;
-                    case 2: out_port[i] = 0b11111011; out_flg[2]++; break;
-                    default: out_port[i] = 0xff; break;
-                }
+                sei();
                 return;
             }
         }
-        s_playing[DEF_WAON]++;                  // 6個の音源をすべて使いきった（音源不足カウンタをインクリメント）
     }
+    lackCnt++;
 }
 
-// 矩形波停止関数(ノート番号, 出力ピン(0-2))
-void sound_stop(uint8_t note, uint8_t pin)
+/*****************************
+ * 矩形波停止関数
+ *  - note:ノート番号
+ *****************************/
+void stopSound(uint8_t note)
 {
-    uint8_t prt, i;
+    uint8_t i;
     
-    switch (pin) {
-        case 0: prt = 0b11111110; break;
-        case 1: prt = 0b11111101; break;
-        case 2: prt = 0b11111011; break;
-        default: prt = 0xff; break;
-    }
-    
-    for (i = 0; i < 6; i++) {   // 音源1から順にノートオフに当たる音源を探し、見つかれば発音停止
-        if (s_playing[i] == note && out_port[i] == prt) {   // 探しているノート番号でかつポートも同じか？
-            s_playing[i] = 0x80;                            // 無音に設定(0x80は無音)
-            switch (pin) {
-                case 0: out_flg[0]--; break;
-                case 1: out_flg[1]--; break;
-                case 2: out_flg[2]--; break;
-                default: break;
-            }
+    for (i = 0; i < DEF_WAON_NUM; i++) {   // 音源1から順にノートオフに当たる音源を探し、見つかれば発音停止
+        if (s_playing[i] == note) {   // 探しているノート番号でかつポートも同じか？
+            s_playing[i] = 0x80;      // 無音に設定(0x80は無音)
             return;
         }
     }
-    s_playing[DEF_WAON] = 0;  // 音源不足カウンタをクリア
+    lackCnt--;
 }
 
-// UART受信割り込み
+/*****************************
+ * ピッチベンド関数
+ * 既に鳴っている音の周波数を変更する
+ *****************************/
+void bendSound(void)
+{
+    uint8_t i;
+    uint8_t oct;
+    uint16_t index;
+    uint16_t intTone;
+    
+    for (i = 0; i < DEF_WAON_NUM; i++) {
+        if (s_playing[i] != 0x80) {
+            // ノート番号を32倍して内部トーンに変換
+            intTone = s_playing[i] << 5;
+            // ピッチベンドの中央からの差分とピッチベンドセンシティビティを乗算してトーンに加算
+            intTone += ((pitchBendMSB - 64) * pitchBendSens) >> 1;
+            oct = intTone / 384;
+            index = intTone % 384;
+            cli();
+            t_l[i] = pgm_read_word(&table[index]) >> oct;
+            sei();
+        }
+    }
+}
+
+/*****************************
+ * UART受信割込み
+ *****************************/
 ISR(USART_RX_vect)
 {
     // リングバッファに保存
@@ -109,233 +152,230 @@ ISR(USART_RX_vect)
     RxBuf[Pdata] = UDR;
 }
 
-// タイマ0比較一致A割り込み(9.6usごとに呼ばれる)
+/*****************************
+ * タイマ0比較一致A割り込み
+ * ※9.6us周期
+ *****************************/
 ISR(TIMER0_COMPA_vect)
 {
-    PORTB = out;        // 出力ポート状態更新
-    c++;                // 16bit変数カウントアップ
-    out = 0xff;         // Hiに戻す
+    uint8_t tmp = 0;
+
+    tim0Cnt++;
     
     if (s_playing[0] != 0x80) {     // 音源1
-        if (c == num[0]) {
+        if (tim0Cnt == num[0]) {
             num[0] += t_l[0];
-            out &= out_port[0];     // 対応ポートをLoにする
+            tmp = 1;
         }
     }
 
     if (s_playing[1] != 0x80) {     // 音源2
-        if (c == num[1]) {
+        if (tim0Cnt == num[1]) {
             num[1] += t_l[1];
-            out &= out_port[1];
+            tmp = 1;
         }
     }
     
     if (s_playing[2] != 0x80) {     // 音源3
-        if (c == num[2]) {
+        if (tim0Cnt == num[2]) {
             num[2] += t_l[2];
-            out &= out_port[2];
+            tmp = 1;
         }
     }
     
     if (s_playing[3] != 0x80) {     // 音源4
-        if (c == num[3]) {
+        if (tim0Cnt == num[3]) {
             num[3] += t_l[3];
-            out &= out_port[3];
+            tmp = 1;
         }
     }
-    
+
     if (s_playing[4] != 0x80) {     // 音源5
-        if (c == num[4]) {
+        if (tim0Cnt == num[4]) {
             num[4] += t_l[4];
-            out &= out_port[4];
+            tmp = 1;
         }
     }
-    
+
     if (s_playing[5] != 0x80) {     // 音源6
-        if (c == num[5]) {
+        if (tim0Cnt == num[5]) {
             num[5] += t_l[5];
-            out &= out_port[5];
+            tmp = 1;
         }
+    }
+
+    // 出力ポート反映
+    if (tmp) {
+        DEF_SOUT_PORT |= (1 << DEF_SOUT_BIT);
+    } else {
+        DEF_SOUT_PORT &= ~(1 << DEF_SOUT_BIT);
     }
 }
 
-// USART設定
-void Usart_init(void)
+/*****************************
+ * 音源再生状態LED表示
+ *****************************/
+void updateSoundStatusLED(void)
 {
-    UBRRH = 0x00;
-    UBRRL = 0x27;
-    
-    UCSRB = 0b10010000;     // 受信割り込み許可/受信許可
-    UCSRC = 0b00000110;     // 非同期動作/パリティ無し/ストップ1bit/データ8bit
+    uint8_t i, tmp;
+
+    // 音源再生状態
+    for (tmp = 0, i = 0; i < DEF_WAON_NUM; i++)
+    {
+        if (s_playing[i] != 0x80) {
+            tmp = 1;
+            break;
+        }
+    }
+
+    if (tmp) {
+        DEF_SLED_PORT |= (1 << DEF_SLED_BIT);
+    } else {
+        DEF_SLED_PORT &= ~(1 << DEF_SLED_BIT);
+    }
+
+    // 音源不足状態表示LED
+    if (lackCnt != 0) {
+        DEF_ELED_PORT |= (1 << DEF_ELED_BIT);
+    } else {
+        DEF_ELED_PORT &= ~(1 << DEF_ELED_BIT);
+    }
 }
 
-void main(void)
+void initSound(void)
 {
-    uint8_t status, byte_1, byte_cnt, RxByte, Pout, mode, i, mode4_cnt = 0;
-    
-    // IOポート設定
-    DDRA = 0x00;                // ポートAは入力
-    DDRB = 0xff;                // ポートBは出力
-    DDRD = 0b01011100;          // ポートDの2,3,4,6だけ出力
-    PORTA = PORTD = 0;          // ポート状態初期化
-    PORTB = 0b00000111;
-    
-    for (i = 0; i < DEF_WAON; i++) {    // 配列初期化
+    uint8_t i;
+
+    pitchBendMSB = 64;
+    pitchBendSens = 2;
+    lackCnt = 0;
+    for (i = 0; i < DEF_WAON_NUM; i++) {
         s_playing[i] = 0x80;
     }
-    s_playing[DEF_WAON] = 0x00;         // 音源不足カウンタクリア
-    
-    // モード判別
-    switch (PIND & 0x22) {
-        case 0x00: mode = 1; break; // チャンネル区別再生
-        case 0x02: mode = 3; break; // 設定ノート番号で別れる
-        case 0x20: mode = 2; break; // チャンネルを区別せずに再生
-        case 0x22: mode = 4; PORTD = PIND | 0b01000000; break;  // 機能設定モード(LED4を点灯させる)
-        default: mode = 0; break;
+}
+
+/*****************************
+ * MIDIメッセージ処理
+ *****************************/
+void procMidiMsg(uint8_t midi_ch)
+{
+    static uint8_t statusByte, byte_1, byte_cnt, RxByte, Pout;
+    static uint8_t rpn_msb = 127, rpn_lsb = 127;
+
+
+    // UART受信バッファが空
+    if (Pdata == Pout) {
+        return;
+    }        
+
+    // リングバッファから1バイト取り出し
+    Pout++;
+    Pout &= (DEF_BUFSIZE - 1);
+    RxByte = RxBuf[Pout];
+
+    // データ解析
+    if (RxByte & 0x80) {    // ステータスバイト(MSB = 1)
+        statusByte = RxByte;
+        byte_cnt = 1;
+        return;
     }
+
+    if (byte_cnt == 1) {    // 第一データバイト
+        byte_1 = RxByte;
+        byte_cnt = 2;
+        return;
+    }
+
+    if (byte_cnt == 2) {    // 第二データバイト
+        if (statusByte == (0x90 | midi_ch)) {  // ノートオンイベント
+            if (RxByte == 0) {      // ベロシティが0(ノートオフ)
+                stopSound(byte_1);
+            } else {
+                playSound(byte_1);
+            }
+        } else if (statusByte == (0x80 | midi_ch)) {    // ノートオフイベント
+            stopSound(byte_1);
+        } else if (statusByte == (0xE0 | midi_ch)) {    // ピッチベンド
+            pitchBendMSB = RxByte;
+            // 既に鳴っている音の周波数を変更する
+            bendSound();
+        } else if (statusByte == (0xB0 | midi_ch)) {
+            // コントロールチェンジ
+            switch (byte_1)
+            {
+                // Data Entry MSB
+                case 6:
+                    if (rpn_msb == 0 && rpn_lsb == 0) {
+                        pitchBendSens = RxByte;
+                        rpn_msb = 127;
+                        rpn_lsb = 127;
+                    }
+                    break;
+
+                // RPN(LSB)
+                case 100:
+                    rpn_lsb = RxByte;
+                    break;
+
+                // RPN(MSB)
+                case 101:
+                    rpn_msb = RxByte;
+                    break;
+
+                // Reset All Controller
+                case 121:
+                    initSound();
+                    break;
+
+                default:
+                    break;
+            }
+        }
+        byte_cnt = 1;
+    }
+}
+
+int main(void)
+{
+    uint8_t midi_ch;
     
-    // EEPROMから設定値読み出し
-    s_l = eeprom_read_byte(0);
-    s_h = eeprom_read_byte(1);
-    
+    // IOポート設定
+    PORTB = 0b00001111;         // PB0 - 3 PullUp Enable
+    DEF_SOUT_DDR |= 1 << DEF_SOUT_BIT;  // 矩形波出力ピン
+    DEF_SLED_DDR |= 1 << DEF_SLED_BIT;  // 音源状態表示LED
+    DEF_ELED_DDR |= 1 << DEF_ELED_BIT;  // 音源不足表示LED
+
     // タイマ0設定
     TCCR0A = 0b00000010;        // CTC動作
-    TCCR0B = 0b00000011;        // Clk/64
-    OCR0A = 2;                  // カウンタトップ値(割り込み周期 9.6us) [OCR0A = (9.6us/3.2us)-1 = 2]
-    TIMSK = 0b00000001;         // 比較A割り込み許可
+    TCCR0B = 0b00000001;        // Clk/1（前置分周なし）
+    OCR0A  = 192 - 1;           // カウンタトップ値(割り込み周期 9.6us) [OCR0A = (9.6us/0.05us) - 1 = 191]
+    TIMSK  = 0b00000001;        // 比較A割り込み許可
+
+    // UART設定
+#if 0
+    // 31.25kbps@20MHz
+    UBRRH = 0x00;
+    UBRRL = 0x27;
+#else
+    // 38.4kbps@20MHz
+    UBRRH = 0x00;
+    UBRRL = 0x20;
+#endif
+    UCSRB = 0b10010000;     // 受信割り込み許可/受信許可
+    UCSRC = 0b00000110;     // 非同期動作/パリティ無し/ストップ1bit/データ8bit
+
+    // 音源状態初期化
+    initSound();
     
-    Pdata = Pout = 0;           // バッファ初期化
-    Usart_init();               // Usart初期化
-    sei();                      // 全割り込み許可
+    // MIDI CH判別
+    midi_ch = PINB & 0x0F;
+
+    // 全割り込み許可
+    sei();
     
-    ///////////// メインループ //////////////
     while (1)
     {
-        // 音源使用確認LED点灯処理
-        if (mode != 4) {
-            if (s_playing[DEF_WAON] != 0) {
-                PORTD = PIND | 0b01000000;  // 音源不足(LED4)
-            } else {
-                PORTD = PIND & 0b10111111;
-            }
-            if (out_flg[0] != 0) {
-                PORTD = PIND | 0b00000100;  // ch1出力中(LED1)
-            } else {
-                PORTD = PIND & 0b11111011;
-            }
-            if (out_flg[1] != 0) {
-                PORTD = PIND | 0b00001000;  // ch2出力中(LED2)
-            } else {
-                PORTD = PIND & 0b11110111;
-            }
-            if (out_flg[2] != 0) {
-                PORTD = PIND | 0b00010000;  // ch3出力中(LED3)
-            } else {
-                PORTD = PIND & 0b11101111;
-            }
-        }
-        
-        if (Pdata == Pout) {
-            continue;   // バッファが空のとき
-        }
-        
-        // リングバッファから1バイト取り出し
-        Pout++;
-        Pout &= (DEF_BUFSIZE - 1);
-        RxByte = RxBuf[Pout];
-        
-        // データ解析
-        if (RxByte & 0x80) {    // ステータスバイト(MSB = 1)
-            status = RxByte;
-            byte_cnt = 1;
-            continue;
-        }
-        
-        if (byte_cnt == 1) {    // 第一データバイト
-            byte_1 = RxByte;
-            byte_cnt = 2;
-            continue;
-        }
-        
-        if (byte_cnt == 2) {            // 第二データバイト
-            if (status >> 4 == 0x09) {  // ノートオンイベント
-                if (RxByte == 0) {      // ベロシティが0(ノートオフ)
-                    if (mode == 1) {
-                        if ((status & 0x0f) <= 2) {
-                            sound_stop(byte_1, status & 0x0f);
-                        }
-                    } else if (mode == 2) {
-                        sound_stop(byte_1, 0);
-                    } else if (mode == 3) {
-                        if (byte_1 < s_l) {
-                            sound_stop(byte_1, 0);
-                        } else if (s_l <= byte_1 && byte_1 < s_h) {
-                            sound_stop(byte_1, 1);
-                        } else if (s_h <= byte_1) {
-                            sound_stop(byte_1, 2);
-                        }
-                    }
-                } else {
-                    if (mode == 1) {
-                        if ((status & 0x0f) <= 2) {
-                            sound_play(byte_1, status & 0x0f);
-                        }
-                    } else if (mode == 2) {
-                        sound_play(byte_1, 0);
-                    } else if (mode == 3) {
-                        if (byte_1 < s_l) {
-                            sound_play(byte_1, 0);
-                        } else if (s_l <= byte_1 && byte_1 < s_h) {
-                            sound_play(byte_1, 1);
-                        } else if (s_h <= byte_1) {
-                            sound_play(byte_1, 2);
-                        }
-                    } else if (mode == 4) {
-                        if (mode4_cnt == 0) {
-                            if (byte_1 == 69) {
-                                PORTD = PIND | 0b00000100;  // LED1点灯
-                                mode4_cnt = 1;
-                            }
-                        } else if (mode4_cnt == 1) {
-                            PORTD = PIND | 0b00001000;      // LED2点灯
-                            s_l = byte_1;
-                            mode4_cnt = 2;
-                        } else if (mode4_cnt == 2) {
-                            s_h = byte_1;
-                            if (s_l < s_h) {                // 設定条件OK
-                                eeprom_write_byte(0, s_l);  // EEPROMに保存
-                                eeprom_write_byte(1, s_h);
-                                while (1) {
-                                    PORTD = PIND | 0b00010000;  // LED3点灯
-                                    delay_ms(100);
-                                    PORTD = PIND & 0b11101111;  // LED3消灯
-                                    delay_ms(100);
-                                }
-                            } else {                        // 設定条件NG
-                                PORTD = PIND & 0b11110111;  // LED2消灯
-                                mode4_cnt = 1;
-                            }
-                        }
-                    }
-                }
-            } else if (status >> 4 == 0x08) {                // ノートオフイベント
-                if (mode == 1) {
-                    if ((status & 0x0f) <= 2) {
-                        sound_stop(byte_1, status & 0x0f);
-                    }
-                } else if (mode == 2) {
-                    sound_stop(byte_1, 0);
-                } else if (mode == 3) {
-                    if (byte_1 < s_l) {
-                        sound_stop(byte_1, 0);
-                    } else if (s_l <= byte_1 && byte_1 < s_h) {
-                        sound_stop(byte_1, 1);
-                    } else if (s_h <= byte_1) {
-                        sound_stop(byte_1, 2);
-                    }
-                }
-            }
-            byte_cnt = 1;
-        }
+        procMidiMsg(midi_ch);
+        updateSoundStatusLED();
     }
 }
