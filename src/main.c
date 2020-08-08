@@ -227,7 +227,7 @@ void updateSoundStatusLED(void)
         }
     }
 
-	// 出力状態表示LED
+    // 出力状態表示LED
     if (tmp) {
         DEF_SLED_PORT |= (1 << DEF_SLED_BIT);
     } else {
