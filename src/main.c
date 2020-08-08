@@ -219,7 +219,6 @@ void updateSoundStatusLED(void)
 {
     uint8_t i, tmp;
 
-    // 音源再生状態
     for (tmp = 0, i = 0; i < DEF_WAON_NUM; i++)
     {
         if (s_playing[i] != 0x80) {
@@ -228,6 +227,7 @@ void updateSoundStatusLED(void)
         }
     }
 
+	// 出力状態表示LED
     if (tmp) {
         DEF_SLED_PORT |= (1 << DEF_SLED_BIT);
     } else {
@@ -242,6 +242,9 @@ void updateSoundStatusLED(void)
     }
 }
 
+/*****************************
+ * 音源パラメータ初期化
+ *****************************/
 void initSound(void)
 {
     uint8_t i;
@@ -352,7 +355,7 @@ int main(void)
     TIMSK  = 0b00000001;        // 比較A割り込み許可
 
     // UART設定
-#if 0
+#if 1
     // 31.25kbps@20MHz
     UBRRH = 0x00;
     UBRRL = 0x27;
