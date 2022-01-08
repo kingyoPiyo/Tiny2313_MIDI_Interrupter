@@ -1,7 +1,7 @@
 # 概要
 Tiny2313 AVRを使用したMIDI Interrupterです。
 
-Blog URL: [http://kingyonull.blogspot.com/2013/09/midi-v21.html](http://kingyonull.blogspot.com/2013/09/midi-v21.html)
+Blog URL: [https://kingyonull.blogspot.com/2013/09/midi-v21.html](https://kingyonull.blogspot.com/2013/09/midi-v21.html)
 
 DRSSTCの制御用として開発しました。出力パルス幅固定のため、パルス幅制御回路と組み合わせて使用することを前提としてます。
 
